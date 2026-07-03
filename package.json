@@ -1,0 +1,9 @@
+{
+  "name": "omp-obsidian-sync",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Mirrors OMP retain/learn calls into markdown notes in an Obsidian vault.",
+  "omp": {
+    "extensions": ["./extensions/sync.ts"]
+  }
+}

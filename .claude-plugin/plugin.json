@@ -1,0 +1,5 @@
+{
+  "name": "omp-obsidian-sync",
+  "version": "0.1.0",
+  "description": "Mirrors OMP retain/learn calls into markdown notes in an Obsidian vault at ~/Notes."
+}

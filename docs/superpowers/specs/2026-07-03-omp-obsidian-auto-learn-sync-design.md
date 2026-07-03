@@ -62,8 +62,8 @@ On `tool_result` where `event.toolName === "retain"` or `event.toolName === "lea
    - Otherwise it is general knowledge.
 
 3. **Resolve target directory:**
-   - If classified as business-logic **and** `process.cwd()` matches
-     `~/Sites/fikrimastor/<repo-name>/...` → target is `~/Notes/<repo-name>/`.
+   - If classified as business-logic **and** `process.cwd()` is `~/Sites/fikrimastor/<repo-name>`
+     itself, or is under `~/Sites/fikrimastor/<repo-name>/...` → target is `~/Notes/<repo-name>/`.
    - Otherwise (general knowledge, or business-logic prefix present but cwd doesn't
      match a recognized repo root) → target is `~/Notes/omp-learn/`.
    - Repo-root matching only recognizes paths under `~/Sites/fikrimastor/`; other
@@ -78,8 +78,8 @@ On `tool_result` where `event.toolName === "retain"` or `event.toolName === "lea
 5. **Write the note:**
    ```markdown
    ---
-   date: 2026-07-03
-   tool: retain
+   date: <ISO date generated at write time, e.g. 2026-07-03>
+   tool: <"retain" or "learn", whichever event.toolName fired>
    tags: [omp-learn]
    ---
    <fact content, prefix stripped>

@@ -14,7 +14,7 @@ export interface SynthConfig {
   topicAliases: Record<string, string>;
 }
 
-const DEFAULTS: SynthConfig = {
+export const DEFAULTS: SynthConfig = {
   vaultRoot: path.join(os.homedir(), "Notes"),
   reposRoot: path.join(os.homedir(), "Sites", "fikrimastor"),
   threshold: 3,

@@ -1,6 +1,5 @@
-import { SynthConfig } from "./config";
 
-export interface TaggedContent {
+export interface TagParse {
   project: string;
   topic: string | null;
   content: string;
@@ -12,10 +11,10 @@ export interface TaggedContent {
  * Regex: /^\s*\[project:([a-z0-9_-]+)\](?:\s+\[([a-z0-9_-]+)\])?\s+(.*)$/i
  * 
  * @param content The raw retain content
- * @param config The current synthesis configuration
- * @returns TaggedContent or null if no project tag is found
+ * @returns TagParse or null if no project tag is found
  */
-export function parseTags(content: string, config: SynthConfig): TaggedContent | null {
+export function parseTags(content: string): TagParse | null {
+  const KNOWN_TOPICS = ["arch", "architecture", "bug", "bugs", "conv", "conventions", "wf", "workflow", "tech", "tech-stack", "tech_stack", "dec", "decisions", "uncategorized"];
   const regex = /^\s*\[project:([a-z0-9_-]+)\](?:\s+\[([a-z0-9_-]+)\])?\s+(.*)$/i;
   const match = content.match(regex);
 
@@ -30,7 +29,7 @@ export function parseTags(content: string, config: SynthConfig): TaggedContent |
   if (rawTopic) {
     const t = rawTopic.toLowerCase();
     // Valid if it's an alias key or a canonical value
-    if (config.topicAliases[t] || Object.values(config.topicAliases).includes(t)) {
+    if (KNOWN_TOPICS.includes(t)) {
       topic = t;
     }
   }

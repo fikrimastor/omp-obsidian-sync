@@ -72,6 +72,10 @@ export function handleRetain(event, opts?): void { /* ... */ }
 
 - Never throws into the OMP session — all errors go to `sync-errors.log` and the audit log
 - Hot-path latency target: **p99 < 50ms** for a single retain (no LLM on this path)
+
+- **Hot-path retain (auto, threshold-triggered):** Pass 1+2 run synchronously; Pass 3 (LLM) is **fired async** (fire-and-forget) so the retain returns in <50ms. If Pass 3 fails, the bullet is already committed; the LLM is best-effort.
+- **`/synthesize <project>`:** synchronous — waits for Pass 3 to finish; chat shows progress + final result inline.
+
 - LLM is opt-in, off by default
 
 ---
@@ -131,12 +135,11 @@ topic: architecture
 source: retain
 ---
 
+- project is on Coolify single-replica deploy
 - uses Encore auth handlers
-- [2026-07-05] project is on Coolify single-replica deploy
-- [2026-07-04] database migrations embedded in Go binary
 ```
 
-Newest at top, deduped on insert. Each bullet may carry a date prefix; the frontmatter `date` is the most recent write.
+**Bullet date rule:** newly written bullets (Pass 1 dedup-surviving inserts) carry no per-bullet date prefix; their `date` lives in the file's frontmatter (which the plugin rewrites to the most recent write time). Per-bullet date prefixes only appear after `/synthesize <project>` Pass 3 merges multiple historical bullets into one — the merged bullet gets the earliest source date.
 
 ### Classifier (keyword fallback, no LLM)
 
@@ -146,9 +149,7 @@ Newest at top, deduped on insert. Each bullet may carry a date prefix; the front
 | `bugs` | "error", "fix", "broken", "crash", "bug", "fail" |
 | `conventions` | "always", "never", "convention", "must", "pattern" |
 | `workflow` | "before", "after", "step", "first", "then" |
-| `tech-stack` | "postgres", "redis", "nuxt", "encore", "laravel" |
 | `decisions` | "decided", "chose", "tradeoff", "instead of" |
-| `uncategorized` | (fallback) |
 
 If no keyword matches → `uncategorized`. Bullets never dropped, always written somewhere.
 
@@ -255,8 +256,8 @@ File: `~/.omp/omp-obsidian-sync.json` (override path via `OMP_SYNC_CONFIG` env v
 
 | Key | Default | Notes |
 |---|---|---|
-| `vaultRoot` | `~/Notes` | Auto-detected on first run |
-| `reposRoot` | `~/Sites/fikrimastor` | Auto-detected (first `~/Sites/*` child) |
+| `vaultRoot` | `~/Notes` | Auto-detected on first run; if `~/Notes` doesn't exist, wizard prompts for path |
+| `reposRoot` | `~/Sites/fikrimastor` | Auto-detected: first existing dir matching `~/Sites/*` (or `~/Code/*`, `~/Projects/*`) that contains a `CLAUDE.md` or `AGENTS.md` is offered as the default |
 | `threshold` | `3` | Pending facts before auto-synthesis runs |
 | `llmProvider` | `null` | One of: `openai`, `deepseek`, `ollama`, `anthropic` |
 | `llmModel` | `null` | Provider-specific, e.g. `gpt-4o-mini` |

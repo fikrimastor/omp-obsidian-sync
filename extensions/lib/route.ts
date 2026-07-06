@@ -49,3 +49,21 @@ export function resolveTargetDir(
 
   return path.join(vaultRoot, GENERAL_DIR_NAME);
 }
+
+const TOPIC_ALIASES: Record<string, string> = {
+  arch: "architecture", bug: "bugs", conv: "conventions",
+  wf: "workflow", tech: "tech-stack", dec: "decisions",
+};
+
+export function canonicalTopic(topic: string, aliases: Record<string, string> = TOPIC_ALIASES): string {
+  return aliases[topic.toLowerCase()] ?? topic;
+}
+
+export function resolveProjectTopicPath(
+  project: string,
+  topic: string,
+  vaultRoot: string,
+): string {
+  return path.join(vaultRoot, project, `${canonicalTopic(topic)}.md`);
+}
+

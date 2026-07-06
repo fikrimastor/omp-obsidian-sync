@@ -2,7 +2,7 @@ import { test, expect, beforeAll, afterAll } from "bun:test";
 import fs from "node:fs";
 
 import path from "node:path";
-import { resolveTargetDir } from "./route";
+import { resolveTargetDir, resolveProjectTopicPath, canonicalTopic } from "./route";
 
 const VAULT = "/tmp/test-vault";
 const REPOS = "/tmp/test-sites";
@@ -44,3 +44,22 @@ test("does not treat a sibling dir with a shared prefix as inside the repo", () 
   const result = resolveTargetDir(cwd, true, { vaultRoot: VAULT, reposRoot: REPOS });
   expect(result).toBe(path.join(VAULT, "omp-learn"));
 });
+
+
+test("resolveProjectTopicPath returns nested path under vault root", () => {
+  expect(resolveProjectTopicPath("rph", "architecture", VAULT))
+    .toBe(path.join(VAULT, "rph", "architecture.md"));
+});
+
+test("canonicalTopic resolves aliases and ignores case", () => {
+  expect(canonicalTopic("arch")).toBe("architecture");
+  expect(canonicalTopic("ARCH")).toBe("architecture");
+  expect(canonicalTopic("unknown")).toBe("unknown");
+});
+
+
+test("resolveProjectTopicPath handles topic aliases", () => {
+  expect(resolveProjectTopicPath("rph", "arch", VAULT))
+    .toBe(path.join(VAULT, "rph", "architecture.md"));
+});
+

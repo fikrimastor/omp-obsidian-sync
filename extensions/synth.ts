@@ -4,13 +4,14 @@ import path from "node:path";
 import { extractFacts } from "./lib/extract";
 import { parseTags } from "./lib/parse-tags";
 import { classifyTopic } from "./lib/topic";
-import { loadConfig, SynthConfig } from "./lib/config";
+import { loadConfig, loadConfigOrDetect, SynthConfig } from "./lib/config";
 import { resolveProjectTopicPath } from "./lib/route";
 import { appendBullet } from "./lib/append-note";
 import { readState, writeState, incrementPending } from "./lib/state";
 import { runSynthesis } from "./lib/synthesize";
-import { auditLog } from "./lib/audit";
+import { auditLog, auditSkip } from "./lib/audit";
 
+import { needsSetup, configPathFor } from "./lib/setup";
 /**
  * Sync error logger for the synthesis hook.
  * Ensures hook failures don't crash the OMP session.
@@ -33,7 +34,32 @@ function logSyncError(err: unknown): void {
  */
 export function handleRetain(event: { toolName: string; input: unknown; cwd: string }, opts?: Partial<SynthConfig>) {
   try {
-    const config = loadConfig();
+    // First-run onboarding gate: if no config file exists and the caller did
+    // not pass a vaultRoot override, skip-side-effect this event and audit it
+    // under the config dir. The next retain will re-prompt because the user
+    // still hasn't run `/synthesize setup`.
+    if (needsSetup() && !opts?.vaultRoot) {
+      let firstRaw = "";
+      if (event.input && typeof event.input === "object") {
+        const inputObj = event.input as Record<string, unknown>;
+        const items = inputObj.items;
+        if (Array.isArray(items) && items.length > 0) {
+          const first = items[0];
+          if (first && typeof first === "object" && "content" in first) {
+            firstRaw = String(first.content ?? "");
+          }
+        } else if ("content" in inputObj) {
+          firstRaw = String(inputObj.content ?? "");
+        }
+      }
+      auditSkip(
+        path.dirname(configPathFor()),
+        "setup skipped",
+        firstRaw,
+      );
+      return;
+    }
+    const config = opts?.vaultRoot ? loadConfig() : loadConfigOrDetect(event.cwd);
     const finalConfig = { ...config, ...opts };
     const vaultRoot = finalConfig.vaultRoot;
 
@@ -80,6 +106,7 @@ export function handleRetain(event: { toolName: string; input: unknown; cwd: str
     logSyncError(err);
   }
 }
+
 
 /**
  * OMP Extension Registration

@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { handleRetain } from "./synth";
 import { loadConfig, SynthConfig } from "./lib/config";
+import { needsSetup, configPathFor } from "./lib/setup";
 
 // Mock the vault for testing
 const MOCK_VAULT = path.join(process.cwd(), "test-vault");
@@ -121,5 +122,35 @@ describe("handleRetain", () => {
 
     const filePath = path.join(MOCK_VAULT, "learn-repo", "tech-stack.md");
     expect(fs.existsSync(filePath)).toBe(true);
+  });
+
+  test("first-run gate: audits a setup-skipped line under the config dir and writes no project file", () => {
+    // MOCK_VAULT is a fresh tmp dir per test.
+    process.env.OMP_SYNC_CONFIG = path.join(MOCK_VAULT, "omp-obsidian-sync.json");
+    process.env.OMP_VAULT_ROOT = "";
+    process.env.OMP_REPOS_ROOT = "";
+    expect(needsSetup()).toBe(true);
+
+    const event = {
+      toolName: "retain",
+      input: { items: [{ content: "[project:rph] [arch] uses Encore" }], i: "x" },
+      cwd: MOCK_VAULT,
+    };
+    // No opts override → expect the gate to skip + audit.
+    handleRetain(event);
+
+    // Audit log under the config dir.
+    const auditPath = path.join(path.dirname(configPathFor()), ".omp-audit.log");
+    expect(fs.existsSync(auditPath)).toBe(true);
+    const audit = fs.readFileSync(auditPath, "utf8");
+    expect(audit).toContain("setup skipped");
+
+    // No project file written.
+    const written = fs.readdirSync(MOCK_VAULT).filter((f) => !f.startsWith(".omp-"));
+    expect(written.length).toBe(0);
+
+    delete process.env.OMP_SYNC_CONFIG;
+    delete process.env.OMP_VAULT_ROOT;
+    delete process.env.OMP_REPOS_ROOT;
   });
 });

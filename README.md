@@ -9,7 +9,7 @@ OMP plugin that routes retained coding facts into structured Obsidian project fo
 - **Dedup + promotion:** Exact/Levenshtein dedup within files; cross-cutting facts promoted to `_promoted.md`
 - **Threshold auto-synthesis:** After 3 pending facts per project, runs dedup + promote
 - **LLM rollup (opt-in):** `/synthesize rph` triggers LLM summarization (requires API key)
-- **Audit log:** All actions logged to `~/Notes/.omp-audit.log`
+- **Audit log:** Activity logged to `<vaultRoot>/.omp-audit.log` (and `~/.omp/.omp-audit.log` for setup-skipped events)
 
 ## Install
 

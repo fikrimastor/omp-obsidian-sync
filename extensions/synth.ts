@@ -12,6 +12,8 @@ import { runSynthesis } from "./lib/synthesize";
 import { auditLog, auditSkip } from "./lib/audit";
 
 import { needsSetup, configPathFor } from "./lib/setup";
+import { registerCommand } from "./commands/synthesize";
+
 /**
  * Sync error logger for the synthesis hook.
  * Ensures hook failures don't crash the OMP session.
@@ -112,14 +114,10 @@ export function handleRetain(event: { toolName: string; input: unknown; cwd: str
  * OMP Extension Registration
  */
 export default function (pi: ExtensionAPI) {
+  // @ts-expect-error: onCommand may not be on ExtensionAPI's typed surface
+  registerCommand(pi);
+
   pi.on("tool_result", (event) => {
-    // Only process 'retain' and 'learn' tools
-    if (event.toolName === "retain" || event.toolName === "learn") {
-      handleRetain({
-        toolName: event.toolName,
-        input: event.input,
-        cwd: event.cwd,
-      });
-    }
+    handleRetain(event);
   });
 }

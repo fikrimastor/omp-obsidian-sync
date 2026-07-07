@@ -22,10 +22,29 @@ omp plugin link $(pwd)
 
 First retain event triggers a setup wizard that auto-detects your vault and repos paths.
 
+## Setup
+
+On the first `retain` or `learn` call, the plugin checks for `~/.omp/omp-obsidian-sync.json`. If the file is missing, a one-shot setup prompt is printed to the PI runtime and the event is held in the audit log (`setup skipped: …`) until you respond.
+
+Detection order (vault + repos):
+
+1. `OMP_VAULT_ROOT` / `OMP_REPOS_ROOT` environment variable — authoritative.
+2. Walk up from the current working directory looking for `.obsidian/` (vault) or `.git/` (repos). The parent of `.git/` is taken as the repos root.
+3. Common spots — vault: `~/Notes`, `~/Obsidian`, `~/Documents/Notes`. Repos: `~/Sites`, `~/Code`, `~/src`, `~/repos`.
+4. Last-resort fallback: `~/Notes` and `~/Sites`, printed as the suggested default and only used when you reply `ok`.
+
+Reply with one of:
+
+- `ok` — accept the detected paths and write the config file.
+- `vault=… repos=…` — use custom paths (e.g. `vault=~/Vault repos=~/Code`).
+- `skip` — abort this event, audit it, and prompt again on the next retain.
+
+Run `/synthesize setup` any time to re-run the wizard.
+
 ## Requirements
 
 - **Bun** runtime
-- **Obsidian vault** at `~/Notes` (or configured path)
+- **Obsidian vault** at a path of your choice (auto-detected, see Setup)
 - **LLM API key** (optional, for LLM synthesis)
 
 ## Configuration
@@ -34,8 +53,8 @@ Config file: `~/.omp/omp-obsidian-sync.json`
 
 | Key | Default | Description |
 |---|---|---|
-| `vaultRoot` | `~/Notes` | Obsidian vault path |
-| `reposRoot` | `~/Sites/fikrimastor` | Repos root (for project routing) |
+| `vaultRoot` | (auto-detected) | Obsidian vault path |
+| `reposRoot` | (auto-detected) | Repos root (for project routing) |
 | `threshold` | `3` | Pending facts before auto-synthesis |
 | `llmProvider` | `null` | LLM provider (`null` = LLM disabled) |
 

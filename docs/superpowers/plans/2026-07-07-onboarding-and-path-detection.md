@@ -886,18 +886,24 @@ git commit -m "feat(sync): route through loadConfigOrDetect; audit-skip on first
 - Modify: `extensions/synth.ts`
 - Test: `extensions/synth.test.ts`
 
+**Interfaces:**
+- Consumes: `loadConfigOrDetect(cwd)` from Task 2, `auditSkip(vaultRoot, reason, content?)` from Task 3, `needsSetup()`, `configPathFor()` from Task 1.
+- Produces: `handleRetain` that gates the first retain when `needsSetup()` is true and no `opts?.vaultRoot` override is given; in that case it calls `auditSkip(<config-dir>, "setup skipped", content)` and returns. The `<config-dir>` is `path.dirname(configPathFor())` — NOT `path.dirname(syncErrorsPath(...))` or any other path.
+- Existing 5 tests pass `vaultRoot` in `opts`, so the new gate's `!opts?.vaultRoot` clause lets them through.
+
 - [ ] **Step 5.1: Write a failing test in `extensions/synth.test.ts`**
 
-Append:
+Append to the existing file (do not change the existing 5 tests):
 
 ```ts
-import { needsSetup } from "./lib/setup";
+import { needsSetup, configPathFor } from "./lib/setup";
 // (existing imports stay)
 
-test("skips and audits when no config exists", () => {
-  // Force a clean slate by deleting any existing mock config.
-  // (MOCK_VAULT is a fresh tmp dir per test, so the user's real config is safe.)
+test("first-run gate: audits a setup-skipped line under the config dir and writes no project file", () => {
+  // MOCK_VAULT is a fresh tmp dir per test.
   process.env.OMP_SYNC_CONFIG = path.join(MOCK_VAULT, "omp-obsidian-sync.json");
+  process.env.OMP_VAULT_ROOT = "";
+  process.env.OMP_REPOS_ROOT = "";
   expect(needsSetup()).toBe(true);
 
   const event = {
@@ -905,29 +911,34 @@ test("skips and audits when no config exists", () => {
     input: { items: [{ content: "[project:rph] [arch] uses Encore" }], i: "x" },
     cwd: MOCK_VAULT,
   };
-  // Note: no opts override → we expect the handler to skip + audit.
+  // No opts override → expect the gate to skip + audit.
   handleRetain(event);
 
-  const audit = fs.readFileSync(path.join(MOCK_VAULT, ".omp-audit.log"), "utf8");
+  // Audit log under the config dir.
+  const auditPath = path.join(path.dirname(configPathFor()), ".omp-audit.log");
+  expect(fs.existsSync(auditPath)).toBe(true);
+  const audit = fs.readFileSync(auditPath, "utf8");
   expect(audit).toContain("setup skipped");
-  // No project file should be written.
+
+  // No project file written.
   const written = fs.readdirSync(MOCK_VAULT).filter((f) => !f.startsWith(".omp-"));
   expect(written.length).toBe(0);
 
   delete process.env.OMP_SYNC_CONFIG;
+  delete process.env.OMP_VAULT_ROOT;
+  delete process.env.OMP_REPOS_ROOT;
 });
 ```
 
 - [ ] **Step 5.2: Run tests to confirm red**
 
 Run: `cd ~/Sites/fikrimastor/omp-obsidian-sync && bun test extensions/synth.test.ts`
-Expected: FAIL — current `synth.ts` always writes to opts.vaultRoot when given, but the new test omits opts and expects the skip+audit path.
+Expected: FAIL — the new test asserts `auditPath` exists after the handler runs, but the current `synth.ts` either writes a project file (no gate) or doesn't write the audit log (no gate).
 
 - [ ] **Step 5.3: Modify `extensions/synth.ts`**
 
-In the `handleRetain` function, replace the `loadConfig()` call block:
+In the `handleRetain` function, find the existing block:
 
-Find:
 ```ts
   try {
     const config = loadConfig();
@@ -936,16 +947,18 @@ Find:
 ```
 
 Replace with:
+
 ```ts
   try {
-    // First-run onboarding gate: if no config file exists and the caller did
-    // not pass an override, skip-side-effect this event and audit it.
     if (needsSetup() && !opts?.vaultRoot) {
-      const firstRaw = (Array.isArray((event.input as any)?.items)
-        ? (event.input as any).items[0]?.content
-        : String((event.input as any)?.content ?? "")) ?? "";
+      const firstItem = event.input && typeof event.input === "object"
+        ? (event.input as { items?: Array<{ content?: string }> }).items?.[0]?.content
+        : undefined;
+      const firstRaw = firstItem ?? (event.input && typeof event.input === "object"
+        ? String((event.input as { content?: string }).content ?? "")
+        : "");
       auditSkip(
-        path.dirname(syncErrorsPath(event.cwd)),
+        path.dirname(configPathFor()),
         "setup skipped",
         firstRaw,
       );
@@ -956,32 +969,29 @@ Replace with:
     const vaultRoot = finalConfig.vaultRoot;
 ```
 
-Add a small helper at the top of the file (just under the imports) for a stable error-log path:
+Add these imports to the top of the file (replacing the existing `loadConfig, SynthConfig` import):
 
 ```ts
-function syncErrorsPath(cwd: string): string {
-  return path.join(cwd, "sync-errors.log");
-}
+import { loadConfig, loadConfigOrDetect, SynthConfig } from "./lib/config";
+import { auditSkip, needsSetup, configPathFor } from "./lib/setup";
 ```
-
-(Replace the existing `path.join(process.cwd(), "sync-errors.log")` in `logSyncError` with `syncErrorsPath(process.cwd())` for consistency — no behavior change.)
 
 - [ ] **Step 5.4: Run synth tests**
 
 Run: `cd ~/Sites/fikrimastor/omp-obsidian-sync && bun test extensions/synth.test.ts`
-Expected: PASS.
+Expected: PASS — 5 pre-existing + 1 new = 6 tests.
 
 - [ ] **Step 5.5: Run the full suite**
 
 Run: `cd ~/Sites/fikrimastor/omp-obsidian-sync && bun test`
-Expected: PASS.
+Expected: PASS — 115 + 1 = 116 tests, 0 fail.
 
 - [ ] **Step 5.6: Commit**
 
 ```bash
 cd ~/Sites/fikrimastor/omp-obsidian-sync
 git add extensions/synth.ts extensions/synth.test.ts
-git commit -m "feat(synth): route through loadConfigOrDetect; skip+audit when setup missing"
+git commit -m "feat(synth): route through loadConfigOrDetect; audit-skip on first-run gate"
 ```
 
 ---

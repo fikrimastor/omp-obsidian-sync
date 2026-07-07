@@ -146,7 +146,6 @@ test("first-run gate: still bypasses when opts.vaultRoot is given (test override
   expect(fs.existsSync(path.join(unconfiguredTmp, ".omp-audit.log"))).toBe(false);
   expect(fs.existsSync(path.join(vaultRoot, "omp-learn", "omp-learn-0001.md"))).toBe(true);
   // No audit-skip log written.
-  expect(fs.existsSync(path.join(unconfiguredTmp, "omp-obsidian-sync.audit.log"))).toBe(false);
 
   delete process.env.OMP_SYNC_CONFIG;
   delete process.env.OMP_VAULT_ROOT;

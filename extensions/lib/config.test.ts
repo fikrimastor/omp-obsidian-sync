@@ -1,5 +1,9 @@
-import { test, expect } from "bun:test";
-import { loadConfig, SynthConfig } from "./config";
+import fs from "node:fs";
+import path from "node:path";
+import os from "node:os";
+import { detectVault, detectReposRoot } from "./setup";
+import { test, expect, describe } from "bun:test";
+import { loadConfig, loadConfigOrDetect, SynthConfig } from "./config";
 
 test("defaults when config file is missing", () => {
   const cfg = loadConfig("/nonexistent.json");
@@ -33,4 +37,46 @@ test("merges topicAliases defaults with config overrides", () => {
   const cfg = loadConfig(testPath);
   expect(cfg.topicAliases.arch).toBe("architecture");
   expect(cfg.topicAliases.new).toBe("something-new");
+});
+
+describe("loadConfigOrDetect", () => {
+  test("returns detected vault + repos when no config file exists", () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "cfg-detect-"));
+    const oldHome = process.env.HOME;
+    const oldSyncConfig = process.env.OMP_SYNC_CONFIG;
+    try {
+      process.env.HOME = tmp;
+      const notes = path.join(tmp, "Notes");
+      fs.mkdirSync(notes, { recursive: true });
+      process.env.OMP_SYNC_CONFIG = path.join(tmp, "missing.json");
+
+      const cfg = loadConfigOrDetect(tmp);
+      expect(cfg.vaultRoot).toBe(notes);
+      expect(fs.existsSync(path.join(notes, "omp-learn"))).toBe(false);
+    } finally {
+      process.env.HOME = oldHome;
+      process.env.OMP_SYNC_CONFIG = oldSyncConfig;
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  test("env var OMP_VAULT_ROOT takes priority over cwd/common", () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "cfg-detect-env-"));
+    const oldHome = process.env.HOME;
+    const oldVaultRoot = process.env.OMP_VAULT_ROOT;
+    const oldSyncConfig = process.env.OMP_SYNC_CONFIG;
+    try {
+      process.env.HOME = tmp;
+      process.env.OMP_VAULT_ROOT = "/env/vault";
+      process.env.OMP_SYNC_CONFIG = path.join(tmp, "missing.json");
+
+      const cfg = loadConfigOrDetect(tmp);
+      expect(cfg.vaultRoot).toBe("/env/vault");
+    } finally {
+      process.env.HOME = oldHome;
+      process.env.OMP_VAULT_ROOT = oldVaultRoot;
+      process.env.OMP_SYNC_CONFIG = oldSyncConfig;
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
 });

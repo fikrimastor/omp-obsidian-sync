@@ -161,7 +161,6 @@ export function runSetupWizard(opts: {
   pi: { note: (m: string) => void };
   cwd: string;
   reply?: string;
-  configPath?: string;
 }):
   | { status: "configured"; config: SynthConfig }
   | { status: "skipped" } {

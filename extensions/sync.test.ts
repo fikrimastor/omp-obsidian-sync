@@ -4,6 +4,8 @@ import path from "node:path";
 import os from "node:os";
 import { handleToolResult } from "./sync";
 
+import { needsSetup, configPathFor } from "./lib/setup";
+
 let vaultRoot: string;
 let reposRoot: string;
 let errorLogPath: string;
@@ -94,4 +96,60 @@ test("never throws even when input is completely malformed", () => {
       { cwd: reposRoot, vaultRoot, reposRoot, errorLogPath },
     ),
   ).not.toThrow();
+});
+
+test("first-run gate: audits a setup-skipped line under the config dir and does not write to the error log", () => {
+  const unconfiguredTmp = fs.mkdtempSync(path.join(os.tmpdir(), "sync-unconfigured-"));
+  const cfgPath = path.join(unconfiguredTmp, "omp-obsidian-sync.json");
+  process.env.OMP_SYNC_CONFIG = cfgPath;
+  process.env.OMP_VAULT_ROOT = "";
+  process.env.OMP_REPOS_ROOT = "";
+
+  expect(needsSetup()).toBe(true);
+
+  const errorLogPath = path.join(unconfiguredTmp, "sync-errors.log");
+  const event = {
+    toolName: "retain",
+    input: { items: [{ content: "fallback fact" }], i: "x" },
+  };
+  handleToolResult(event, { cwd: reposRoot, errorLogPath });
+
+  // Audit log written next to the config.
+  const auditPath = path.join(path.dirname(cfgPath), ".omp-audit.log");
+  expect(fs.existsSync(auditPath)).toBe(true);
+  const auditBody = fs.readFileSync(auditPath, "utf8");
+  expect(auditBody).toContain("setup skipped");
+  expect(auditBody).toContain("fallback fact");
+
+  // Error log NOT written — the gate short-circuits.
+  expect(fs.existsSync(errorLogPath)).toBe(false);
+
+  delete process.env.OMP_SYNC_CONFIG;
+  delete process.env.OMP_VAULT_ROOT;
+  delete process.env.OMP_REPOS_ROOT;
+  fs.rmSync(unconfiguredTmp, { recursive: true, force: true });
+});
+
+test("first-run gate: still bypasses when opts.vaultRoot is given (test override path)", () => {
+  // The gate condition is `needsSetup() && !opts.vaultRoot` — when a test
+  // passes an explicit vaultRoot, the handler must run normally.
+  const unconfiguredTmp = fs.mkdtempSync(path.join(os.tmpdir(), "sync-unconfigured-bypass-"));
+  process.env.OMP_SYNC_CONFIG = path.join(unconfiguredTmp, "omp-obsidian-sync.json");
+  process.env.OMP_VAULT_ROOT = "";
+  process.env.OMP_REPOS_ROOT = "";
+
+  const errorLogPath = path.join(unconfiguredTmp, "sync-errors.log");
+  handleToolResult(
+    { toolName: "retain", input: { items: [{ content: "general fact" }], i: "x" } },
+    { cwd: reposRoot, vaultRoot, reposRoot, errorLogPath },
+  );
+  expect(fs.existsSync(path.join(unconfiguredTmp, ".omp-audit.log"))).toBe(false);
+  expect(fs.existsSync(path.join(vaultRoot, "omp-learn", "omp-learn-0001.md"))).toBe(true);
+  // No audit-skip log written.
+  expect(fs.existsSync(path.join(unconfiguredTmp, "omp-obsidian-sync.audit.log"))).toBe(false);
+
+  delete process.env.OMP_SYNC_CONFIG;
+  delete process.env.OMP_VAULT_ROOT;
+  delete process.env.OMP_REPOS_ROOT;
+  fs.rmSync(unconfiguredTmp, { recursive: true, force: true });
 });

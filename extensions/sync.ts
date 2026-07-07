@@ -1,14 +1,13 @@
 import fs from "node:fs";
 import path from "node:path";
-import os from "node:os";
 import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent/extensibility/hooks";
 import { extractFacts } from "./lib/extract";
 import { classify } from "./lib/classify";
 import { resolveTargetDir } from "./lib/route";
 import { writeNote } from "./lib/note";
-
-const DEFAULT_VAULT_ROOT = path.join(os.homedir(), "Notes");
-const DEFAULT_REPOS_ROOT = path.join(os.homedir(), "Sites", "fikrimastor");
+import { loadConfigOrDetect } from "./lib/config";
+import { auditSkip } from "./lib/audit";
+import { needsSetup, configPathFor } from "./lib/setup";
 const DEFAULT_ERROR_LOG = path.join(__dirname, "..", "sync-errors.log");
 
 export interface HandleOptions {
@@ -25,6 +24,20 @@ function logError(errorLogPath: string, message: string): void {
   } catch {
     // Logging itself must never throw or surface into the agent session.
   }
+}
+
+/**
+ * Resolves the runtime vault + repos paths:
+ * - if HandleOptions overrides are given, those win (test path).
+ * - otherwise loadConfigOrDetect() runs the env > cwd > common > fallback
+ *   detection layered over the file config.
+ */
+function resolvePaths(opts: HandleOptions): { vaultRoot: string; reposRoot: string } {
+  if (opts.vaultRoot && opts.reposRoot) {
+    return { vaultRoot: opts.vaultRoot, reposRoot: opts.reposRoot };
+  }
+  const cfg = loadConfigOrDetect(opts.cwd ?? process.cwd());
+  return { vaultRoot: opts.vaultRoot ?? cfg.vaultRoot, reposRoot: opts.reposRoot ?? cfg.reposRoot };
 }
 
 /**
@@ -54,9 +67,22 @@ export function handleToolResult(
       return;
     }
 
+    // First-run onboarding gate: if no config file exists and the caller did
+    // not pass a vaultRoot override, skip-side-effect this event and audit it
+    // under the config dir. The next retain will re-prompt because the user
+    // still hasn't run `/synthesize setup`.
+    if (needsSetup() && !opts.vaultRoot) {
+      const firstContent = facts[0] ?? "";
+      auditSkip(
+        path.dirname(configPathFor()),
+        "setup skipped",
+        firstContent,
+      );
+      return;
+    }
+
     const cwd = opts.cwd ?? process.cwd();
-    const vaultRoot = opts.vaultRoot ?? DEFAULT_VAULT_ROOT;
-    const reposRoot = opts.reposRoot ?? DEFAULT_REPOS_ROOT;
+    const { vaultRoot, reposRoot } = resolvePaths({ ...opts, cwd });
 
     for (const rawContent of facts) {
       const { isProject, content } = classify(rawContent);

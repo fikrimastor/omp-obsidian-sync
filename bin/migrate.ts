@@ -1,4 +1,8 @@
 #!/usr/bin/env bun
+// bin/migrate.ts — one-shot legacy note migrator. Reads ~/.omp/omp-obsidian-sync.json
+// (or OMP_SYNC_CONFIG) via loadConfig(). For new CLIs, prefer loadConfigOrDetect(cwd)
+// so the first-run detection is honored.
+
 import path from "node:path";
 import fs from "node:fs";
 import readline from "node:readline";

@@ -700,68 +700,72 @@ git commit -m "feat(audit): add auditSkip for setup-skipped events"
 - Test: `extensions/sync.test.ts`
 
 **Interfaces:**
-- Consumes: `loadConfigOrDetect(cwd)` from Task 2, `auditSkip` from Task 3.
-- `HandleOptions` keeps `vaultRoot?` / `reposRoot?` for tests; the handler now uses opts when given, otherwise falls back to `loadConfigOrDetect`.
+- Consumes: `loadConfigOrDetect(cwd)` from Task 2, `auditSkip(vaultRoot, reason, content?)` from Task 3, `needsSetup()` from Task 1, `configPathFor()` from Task 1.
+- Produces: a `handleToolResult` that gates the first retain when `needsSetup()` is true and no `opts.vaultRoot` override is given; in that case it calls `auditSkip(<config-dir>, "setup skipped", content)` and returns without writing any note. The `<config-dir>` is `path.dirname(configPathFor())` — i.e. `~/.omp/` — so the audit log lives next to where the config will be written. Do NOT pass `path.dirname(errorLogPath)`; that's not the audit convention.
+- `HandleOptions` keeps `vaultRoot?` / `reposRoot?` / `errorLogPath?` / `cwd?`; the handler resolves paths via `loadConfigOrDetect(cwd)` when overrides are absent.
 
-- [ ] **Step 4.1: Write a failing test in `extensions/sync.test.ts`**
+- [ ] **Step 4.1: Write failing tests in `extensions/sync.test.ts`**
 
-Append:
+Append two test cases to the existing file. Both must:
+1. Force `OMP_SYNC_CONFIG` to a path inside a fresh tmp dir.
+2. Force `OMP_VAULT_ROOT` and `OMP_REPOS_ROOT` to empty strings (so detection falls through to common spots, then fallback).
+3. Clean up env vars and the tmp dir in `afterEach`.
 
+Test 1 — the gate:
 ```ts
-import { needsSetup, writeConfig } from "./lib/setup";
-
-// (existing imports stay)
-let unconfiguredTmp: string;
-
-beforeEach(() => {
-  // Existing beforeEach creates vaultRoot, reposRoot, errorLogPath inside a tempdir.
-  // We add a second tempdir for the "no config" case.
-  unconfiguredTmp = fs.mkdtempSync(path.join(os.tmpdir(), "sync-unconfigured-"));
-  // Force OMP_SYNC_CONFIG to a path that does not exist so loadConfig() returns DEFAULTS.
-  process.env.OMP_SYNC_CONFIG = path.join(unconfiguredTmp, "omp-obsidian-sync.json");
+test("first-run gate: audits a setup-skipped line under the config dir and does not write to the error log", () => {
+  const unconfiguredTmp = fs.mkdtempSync(path.join(os.tmpdir(), "sync-unconfigured-"));
+  const cfgPath = path.join(unconfiguredTmp, "omp-obsidian-sync.json");
+  process.env.OMP_SYNC_CONFIG = cfgPath;
   process.env.OMP_VAULT_ROOT = "";
   process.env.OMP_REPOS_ROOT = "";
-  // No need to set OMP_VAULT_ROOT / OMP_REPOS_ROOT — we want the fallback path,
-  // and loadConfigOrDetect will return path.join(home, "Notes") / path.join(home, "Sites").
-});
 
-afterEach(() => {
+  expect(needsSetup()).toBe(true);
+
+  const errorLogPath = path.join(unconfiguredTmp, "sync-errors.log");
+  const event = { toolName: "retain", input: { items: [{ content: "fallback fact" }], i: "x" } };
+  handleToolResult(event, { cwd: reposRoot, errorLogPath });
+
+  const auditPath = path.join(path.dirname(cfgPath), "omp-obsidian-sync.audit.log");
+  expect(fs.existsSync(auditPath)).toBe(true);
+  const auditBody = fs.readFileSync(auditPath, "utf8");
+  expect(auditBody).toContain("setup skipped");
+  expect(auditBody).toContain("fallback fact");
+  expect(fs.existsSync(errorLogPath)).toBe(false);
+
   delete process.env.OMP_SYNC_CONFIG;
   delete process.env.OMP_VAULT_ROOT;
   delete process.env.OMP_REPOS_ROOT;
   fs.rmSync(unconfiguredTmp, { recursive: true, force: true });
 });
-
-test("does not write a note when no config exists and detection hits fallback", () => {
-  // Ensure no config file at the OMP_SYNC_CONFIG path.
-  expect(needsSetup()).toBe(true);
-
-  const before = Date.now();
-  handleToolResult(
-    { toolName: "retain", input: { items: [{ content: "fallback fact" }], i: "x" } },
-    { cwd: reposRoot, errorLogPath }, // intentionally no vaultRoot / reposRoot
-  );
-
-  // Nothing should be written inside the tmp vault at reposRoot (since it is a
-  // tmpdir, it does not contain a vault at all). The fallback path is ~/Notes
-  // under HOME, which we don't touch in tests — but the OMP_SYNC_CONFIG points
-  // at unconfiguredTmp, so any auditSkip call would try to write inside that.
-  // We assert nothing was written anywhere reachable from unconfiguredTmp.
-  const wrote = fs.readdirSync(unconfiguredTmp).filter((f) => f !== path.basename(process.env.OMP_SYNC_CONFIG!));
-  // The OMP_SYNC_CONFIG file itself doesn't exist, so unconfiguredTmp should be empty.
-  expect(wrote.length).toBe(0);
-  // Note: we don't assert errorLogPath is empty — sync.ts writes its own errors
-  // log on top of the audit log; we only assert the absence of side effects in
-  // the user's vault.
-  expect(before).toBeLessThanOrEqual(Date.now());
-});
 ```
 
+Test 2 — the bypass when an override is given (test path):
+```ts
+test("first-run gate: bypassed when opts.vaultRoot is given (test override path)", () => {
+  const unconfiguredTmp = fs.mkdtempSync(path.join(os.tmpdir(), "sync-unconfigured-bypass-"));
+  process.env.OMP_SYNC_CONFIG = path.join(unconfiguredTmp, "omp-obsidian-sync.json");
+  process.env.OMP_VAULT_ROOT = "";
+  process.env.OMP_REPOS_ROOT = "";
+
+  const errorLogPath = path.join(unconfiguredTmp, "sync-errors.log");
+  handleToolResult(
+    { toolName: "retain", input: { items: [{ content: "general fact" }], i: "x" } },
+    { cwd: reposRoot, vaultRoot, reposRoot, errorLogPath },
+  );
+  expect(fs.existsSync(path.join(vaultRoot, "omp-learn", "omp-learn-0001.md"))).toBe(true);
+  expect(fs.existsSync(path.join(unconfiguredTmp, "omp-obsidian-sync.audit.log"))).toBe(false);
+
+  delete process.env.OMP_SYNC_CONFIG;
+  delete process.env.OMP_VAULT_ROOT;
+  delete process.env.OMP_REPOS_ROOT;
+  fs.rmSync(unconfiguredTmp, { recursive: true, force: true });
+});
+```
 - [ ] **Step 4.2: Run tests to confirm red**
 
 Run: `cd ~/Sites/fikrimastor/omp-obsidian-sync && bun test extensions/sync.test.ts`
-Expected: FAIL — current `sync.ts` uses `DEFAULT_VAULT_ROOT` (`~/Notes`) and would write a note there OR a sync-errors.log entry for the wrong reason. After the change in step 4.3 the test will pass.
-
+Expected: FAIL — the new tests reference `auditSkip` behavior that doesn't exist yet. The two new tests will fail because `handleToolResult` currently writes to the (nonexistent) `~/Notes` vault, not the audit log under the config dir.
 - [ ] **Step 4.3: Rewrite `extensions/sync.ts`**
 
 Replace the whole file with:
@@ -769,14 +773,13 @@ Replace the whole file with:
 ```ts
 import fs from "node:fs";
 import path from "node:path";
-import os from "node:os";
 import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent/extensibility/hooks";
 import { extractFacts } from "./lib/extract";
 import { classify } from "./lib/classify";
 import { resolveTargetDir } from "./lib/route";
 import { writeNote } from "./lib/note";
 import { loadConfigOrDetect } from "./lib/config";
-import { auditSkip, needsSetup } from "./lib/setup";
+import { auditSkip, needsSetup, configPathFor } from "./lib/setup";
 
 const DEFAULT_ERROR_LOG = path.join(__dirname, "..", "sync-errors.log");
 
@@ -796,12 +799,6 @@ function logError(errorLogPath: string, message: string): void {
   }
 }
 
-/**
- * Resolves the runtime vault + repos paths:
- * - if HandleOptions overrides are given, those win (test path).
- * - otherwise loadConfigOrDetect() runs the env > cwd > common > fallback
- *   detection layered over the file config.
- */
 function resolvePaths(opts: HandleOptions): { vaultRoot: string; reposRoot: string } {
   if (opts.vaultRoot && opts.reposRoot) {
     return { vaultRoot: opts.vaultRoot, reposRoot: opts.reposRoot };
@@ -810,11 +807,6 @@ function resolvePaths(opts: HandleOptions): { vaultRoot: string; reposRoot: stri
   return { vaultRoot: opts.vaultRoot ?? cfg.vaultRoot, reposRoot: opts.reposRoot ?? cfg.reposRoot };
 }
 
-/**
- * Orchestrates one retain/learn tool_result event into zero or more vault notes.
- * Exported standalone (not just via the default pi.on registration) so it's
- * directly unit-testable without a real ExtensionAPI. Never throws.
- */
 export function handleToolResult(
   event: { toolName: string; input: unknown },
   opts: HandleOptions = {},
@@ -837,17 +829,13 @@ export function handleToolResult(
       return;
     }
 
-    // First-run onboarding gate: if no config file exists and the user has not
-    // confirmed paths, skip-side-effect this event and audit it. The retain
-    // handler in the synth extension does the same.
     if (needsSetup() && !opts.vaultRoot) {
       const firstContent = facts[0] ?? "";
       auditSkip(
-        path.dirname(errorLogPath), // best-effort: a sane fallback location
+        path.dirname(configPathFor()),
         "setup skipped",
         firstContent,
       );
-      opts.errorLogPath && logError(errorLogPath, "setup required: no config file; run /synthesize setup");
       return;
     }
 
@@ -871,6 +859,7 @@ export default function (pi: ExtensionAPI): void {
 }
 ```
 
+
 - [ ] **Step 4.4: Run sync tests**
 
 Run: `cd ~/Sites/fikrimastor/omp-obsidian-sync && bun test extensions/sync.test.ts`
@@ -886,7 +875,7 @@ Expected: PASS.
 ```bash
 cd ~/Sites/fikrimastor/omp-obsidian-sync
 git add extensions/sync.ts extensions/sync.test.ts
-git commit -m "feat(sync): route through loadConfigOrDetect; skip when setup is missing"
+git commit -m "feat(sync): route through loadConfigOrDetect; audit-skip on first-run gate"
 ```
 
 ---

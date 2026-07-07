@@ -1,9 +1,7 @@
 import path from "node:path";
 import fs from "node:fs";
-import os from "node:os";
+import { loadConfigOrDetect } from "./config";
 
-const DEFAULT_VAULT_ROOT = path.join(os.homedir(), "Notes");
-const DEFAULT_REPOS_ROOT = path.join(os.homedir(), "Sites", "fikrimastor");
 const GENERAL_DIR_NAME = "omp-learn";
 
 export interface RouteOptions {
@@ -23,8 +21,13 @@ export function resolveTargetDir(
   isProject: boolean,
   opts: RouteOptions = {},
 ): string {
-  const vaultRoot = opts.vaultRoot ?? DEFAULT_VAULT_ROOT;
-  const reposRoot = opts.reposRoot ?? DEFAULT_REPOS_ROOT;
+  // Prefer explicit overrides (tests + callers with full config). Otherwise
+  // resolve via loadConfigOrDetect so env / cwd / common / fallback all apply.
+  const detected = opts.vaultRoot && opts.reposRoot
+    ? null
+    : loadConfigOrDetect(cwd);
+  const vaultRoot = opts.vaultRoot ?? detected!.vaultRoot;
+  const reposRoot = opts.reposRoot ?? detected!.reposRoot;
 
   if (isProject) {
     const relative = path.relative(reposRoot, cwd);

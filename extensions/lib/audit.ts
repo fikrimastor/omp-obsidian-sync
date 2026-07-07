@@ -20,3 +20,22 @@ export function auditLog(vaultRoot: string, line: string): void {
         // Silent fail as per requirements: "Never throws"
     }
 }
+
+/**
+ * Audit a skipped event (typically: setup not yet completed, so the fact
+ * could not be written). The line is tagged with a `setup skipped:` prefix
+ * so it can be distinguished from regular audit entries.
+ *
+ * Never throws.
+ */
+export function auditSkip(vaultRoot: string, reason: string, content?: string): void {
+    try {
+        const logPath = path.join(vaultRoot, '.omp-audit.log');
+        const timestamp = new Date().toISOString();
+        const snippet = content ? ` ${content.slice(0, 80)}` : "";
+        const formattedLine = `[${timestamp}] ${reason}:${snippet}\n`;
+        fs.appendFileSync(logPath, formattedLine, 'utf8');
+    } catch (error) {
+        // Silent fail as per requirements: "Never throws"
+    }
+}

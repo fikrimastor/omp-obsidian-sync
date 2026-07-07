@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { auditLog } from './audit';
+import * as os from 'node:os';
+import { auditLog, auditSkip } from './audit';
 
 describe('auditLog', () => {
     const testVaultRoot = path.join(process.cwd(), 'test-vault');
@@ -43,5 +44,20 @@ describe('auditLog', () => {
     it('does not throw when the path is invalid or read-only', () => {
         const invalidRoot = '/non-existent-path-12345/root';
         expect(() => auditLog(invalidRoot, 'this should not throw')).not.toThrow();
+    });
+});
+
+describe('auditSkip', () => {
+    it("auditSkip writes a 'setup skipped' tagged line", () => {
+        const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "audit-skip-"));
+        auditSkip(tmp, "setup skipped", "first fact content");
+        const log = fs.readFileSync(path.join(tmp, ".omp-audit.log"), "utf8");
+        expect(log).toContain("setup skipped");
+        expect(log).toContain("first fact content");
+        fs.rmSync(tmp, { recursive: true, force: true });
+    });
+
+    it("auditSkip never throws on missing dir", () => {
+        expect(() => auditSkip("/nonexistent/path/xyz", "setup skipped")).not.toThrow();
     });
 });
